@@ -1,5 +1,7 @@
 import os
 import random
+import time
+from datetime import datetime
 
 import streamlit as st
 from openai import APIConnectionError, APIStatusError, AuthenticationError, OpenAI
@@ -86,6 +88,47 @@ def extract_share_actions(full_text: str, section_title: str, fallback: str) -> 
     return fallback
 
 
+def extract_history_preview(full_text: str, max_len: int = 80) -> str:
+    """从解读文本中提取锦囊段落预览。"""
+    for section_title in ("### 🗝️ 解忧锦囊", "### 🗝️ 双人相处锦囊"):
+        if section_title in full_text:
+            lines = [
+                line.strip()
+                for line in full_text.split(section_title, 1)[-1].split("\n")
+                if line.strip() and not line.startswith("#")
+            ]
+            if lines:
+                preview = " ".join(lines[:3])
+                if len(preview) > max_len:
+                    return preview[:max_len] + "..."
+                return preview
+    lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+    preview = " ".join(lines[:3])
+    if len(preview) > max_len:
+        return preview[:max_len] + "..."
+    return preview
+
+
+def add_history_record(mode: str, textarea_key: str, result_name: str, full_text: str) -> None:
+    user_input_raw = st.session_state.get(textarea_key, "").strip()
+    record = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "mode": mode,
+        "user_input": user_input_raw if user_input_raw else "情绪盲盒",
+        "result_name": result_name,
+        "preview": extract_history_preview(full_text),
+    }
+    st.session_state.history = [record] + st.session_state.history[:9]
+
+
+def clear_history() -> None:
+    st.session_state.history = []
+
+
+def show_history_detail(preview: str) -> None:
+    st.toast(preview)
+
+
 def fill_textarea(textarea_key: str, text: str) -> None:
     st.session_state[textarea_key] = text
 
@@ -115,48 +158,124 @@ def render_share_block(share_text: str, share_key: str, label: str, height: int 
     st.text_area(label, value=share_text, height=height, key=share_key)
 
 
+def reset_dual_ready() -> None:
+    st.session_state.my_ready = False
+    st.session_state.ta_ready = False
+
+
+def set_my_ready() -> None:
+    st.session_state.my_ready = True
+
+
+def set_ta_ready() -> None:
+    st.session_state.ta_ready = True
+
+
+def render_dual_ready_controls(key_prefix: str) -> bool:
+    st.info(
+        "💡 双人联动说明：本版本为单设备演示，双方点击准备后即可抽卦。"
+        "真正的跨设备互动需要后端支持，例如使用数据库同步状态。"
+    )
+
+    col_my, col_ta = st.columns(2)
+    with col_my:
+        if st.session_state.my_ready:
+            st.success("✅ 我准备好啦")
+        else:
+            st.button(
+                "👤 我准备好啦",
+                key=f"{key_prefix}_my_ready",
+                use_container_width=True,
+                on_click=set_my_ready,
+            )
+    with col_ta:
+        if st.session_state.ta_ready:
+            st.success("✅ TA 已准备好")
+        else:
+            st.button(
+                "👥 帮 TA 点一下（模拟 TA 已准备好）",
+                key=f"{key_prefix}_ta_ready",
+                use_container_width=True,
+                on_click=set_ta_ready,
+            )
+
+    st.button("🔄 重置准备状态", key=f"{key_prefix}_reset", on_click=reset_dual_ready)
+    st.write("")
+
+    if st.session_state.my_ready and st.session_state.ta_ready:
+        return True
+
+    st.caption("等待双方都准备好...（自己点左按钮，帮朋友点右按钮）")
+    return False
+
+
+def render_history_sidebar() -> None:
+    with st.expander("📜 历史记录 (最近10条)", expanded=False):
+        st.caption("刷新页面后记录将清空。")
+        if not st.session_state.history:
+            st.caption("暂无历史记录。")
+        else:
+            for idx, record in enumerate(st.session_state.history):
+                st.markdown(
+                    f"**{record['timestamp']}** · {record['mode']} · "
+                    f"**{record['result_name']}**"
+                )
+                st.caption(f"📝 {record['user_input']}")
+                preview_short = record["preview"][:60]
+                if len(record["preview"]) > 60:
+                    preview_short += "..."
+                st.caption(preview_short)
+                st.button(
+                    "查看详情",
+                    key=f"history_detail_{idx}",
+                    on_click=show_history_detail,
+                    args=(record["preview"],),
+                )
+                if idx < len(st.session_state.history) - 1:
+                    st.divider()
+        st.button("清空历史", key="clear_history", on_click=clear_history)
+
+
 SINGLE_TAGS = ["offer等待焦虑", "人生方向抉择Yes or No", "好无聊我做点什么呢"]
 DUAL_TAGS = ["最近总冷战吵架", "异地恋方向迷茫", "关系卡在暧昧期"]
-SHARE_LINK = os.getenv("APP_SHARE_URL", "http://localhost:8501")
+SHARE_LINK = os.getenv("APP_SHARE_URL", "https://vibecoding-7ky3op9bomtwgk9szuqeyf.streamlit.app/")
 
 ICHING_HEXAGRAMS = {
-    "乾为天": {"num": 1},
-    "坤为地": {"num": 2},
-    "水雷屯": {"num": 3},
-    "山水蒙": {"num": 4},
-    "地天泰": {"num": 11},
-    "天地否": {"num": 12},
-    "火天大有": {"num": 14},
-    "地山谦": {"num": 15},
-    "泽水困": {"num": 47},
-    "火山旅": {"num": 56},
-    "水火既济": {"num": 63},
-    "火水未济": {"num": 64},
+    "乾为天": {"num": 1}, "坤为地": {"num": 2}, "水雷屯": {"num": 3}, "山水蒙": {"num": 4},
+    "水天需": {"num": 5}, "天水讼": {"num": 6}, "地水师": {"num": 7}, "水地比": {"num": 8},
+    "风天小畜": {"num": 9}, "天泽履": {"num": 10}, "地天泰": {"num": 11}, "天地否": {"num": 12},
+    "天火同人": {"num": 13}, "火天大有": {"num": 14}, "地山谦": {"num": 15}, "雷地豫": {"num": 16},
+    "泽雷随": {"num": 17}, "山风蛊": {"num": 18}, "地泽临": {"num": 19}, "风地观": {"num": 20},
+    "火雷噬嗑": {"num": 21}, "山火贲": {"num": 22}, "山地剥": {"num": 23}, "地雷复": {"num": 24},
+    "天雷无妄": {"num": 25}, "山天大畜": {"num": 26}, "山雷颐": {"num": 27}, "泽风大过": {"num": 28},
+    "坎为水": {"num": 29}, "离为火": {"num": 30}, "泽山咸": {"num": 31}, "雷风恒": {"num": 32},
+    "天山遁": {"num": 33}, "雷天大壮": {"num": 34}, "火地晋": {"num": 35}, "地火明夷": {"num": 36},
+    "风火家人": {"num": 37}, "火泽睽": {"num": 38}, "水山蹇": {"num": 39}, "雷水解": {"num": 40},
+    "山泽损": {"num": 41}, "风雷益": {"num": 42}, "泽天夬": {"num": 43}, "天风姤": {"num": 44},
+    "泽地萃": {"num": 45}, "地风升": {"num": 46}, "泽水困": {"num": 47}, "水风井": {"num": 48},
+    "泽火革": {"num": 49}, "火风鼎": {"num": 50}, "震为雷": {"num": 51}, "艮为山": {"num": 52},
+    "风山渐": {"num": 53}, "雷泽归妹": {"num": 54}, "雷火丰": {"num": 55}, "火山旅": {"num": 56},
+    "巽为风": {"num": 57}, "兑为泽": {"num": 58}, "风水涣": {"num": 59}, "水泽节": {"num": 60},
+    "风泽中孚": {"num": 61}, "雷山小过": {"num": 62}, "水火既济": {"num": 63}, "火水未济": {"num": 64},
 }
 
 TAROT_CARDS = [
-    "愚人",
-    "魔术师",
-    "女祭司",
-    "女皇",
-    "皇帝",
-    "教皇",
-    "恋人",
-    "战车",
-    "力量",
-    "隐士",
-    "命运之轮",
-    "正义",
-    "倒吊人",
-    "死神 (代表转化与新生)",
-    "节制",
-    "恶魔 (代表直面欲望)",
-    "高塔 (代表打破重组)",
-    "星星",
-    "月亮",
-    "太阳",
-    "审判",
-    "世界",
+    # 大阿卡纳 22 张
+    "愚人", "魔术师", "女祭司", "女皇", "皇帝", "教皇", "恋人", "战车", "力量", "隐士",
+    "命运之轮", "正义", "倒吊人", "死神", "节制", "恶魔", "高塔", "星星", "月亮", "太阳",
+    "审判", "世界",
+    # 权杖组
+    "权杖一", "权杖二", "权杖三", "权杖四", "权杖五", "权杖六", "权杖七", "权杖八", "权杖九", "权杖十",
+    "权杖侍从", "权杖骑士", "权杖王后", "权杖国王",
+    # 圣杯组
+    "圣杯一", "圣杯二", "圣杯三", "圣杯四", "圣杯五", "圣杯六", "圣杯七", "圣杯八", "圣杯九", "圣杯十",
+    "圣杯侍从", "圣杯骑士", "圣杯王后", "圣杯国王",
+    # 宝剑组
+    "宝剑一", "宝剑二", "宝剑三", "宝剑四", "宝剑五", "宝剑六", "宝剑七", "宝剑八", "宝剑九", "宝剑十",
+    "宝剑侍从", "宝剑骑士", "宝剑王后", "宝剑国王",
+    # 星币组
+    "星币一", "星币二", "星币三", "星币四", "星币五", "星币六", "星币七", "星币八", "星币九", "星币十",
+    "星币侍从", "星币骑士", "星币王后", "星币国王",
 ]
 
 # ==========================================
@@ -171,6 +290,9 @@ for key, default in [
     ("sw_ta", ""),
     ("de_ta", ""),
     ("dw_ta", ""),
+    ("my_ready", False),
+    ("ta_ready", False),
+    ("history", []),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -289,6 +411,57 @@ st.markdown(
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.02);
     }
+
+    /* 美化切换 Tab */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        background-color: #f0f2f5;
+        padding: 6px;
+        border-radius: 40px;
+        margin-bottom: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 32px !important;
+        padding: 10px 28px !important;
+        font-weight: 600;
+        font-size: 16px;
+        transition: all 0.2s ease;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #2E7D32 !important;
+        color: white !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .stTabs [aria-selected="false"]:hover {
+        background-color: #e0e2e5;
+        color: #111;
+    }
+
+    @media (max-width: 600px) {
+        .stTabs [data-baseweb="tab"] {
+            padding: 6px 12px !important;
+            font-size: 13px !important;
+        }
+        .stButton > button {
+            font-size: 14px !important;
+            padding: 0.4rem 0.8rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) {
+            gap: 6px !important;
+            flex-wrap: wrap !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) .stButton > button {
+            font-size: 9px !important;
+            padding: 2px 5px !important;
+            height: 22px !important;
+        }
+        .stTextArea textarea {
+            font-size: 14px !important;
+        }
+        .stMarkdown, .stCaption {
+            font-size: 13px !important;
+        }
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -303,6 +476,17 @@ with st.sidebar:
         placeholder="sk-...（未填则使用环境变量）",
         help="启动前也可执行：export DEEPSEEK_API_KEY='你的key'",
     )
+    st.divider()
+    st.subheader("🔗 分享链接")
+    st.text_input(
+        "当前分享地址",
+        value=SHARE_LINK,
+        disabled=True,
+        help="全选复制后发给朋友，对方点开即可使用。",
+    )
+    st.caption("💡 分享给朋友时，请复制上方链接发送。")
+    st.divider()
+    render_history_sidebar()
 
 api_key = get_api_key()
 
@@ -349,7 +533,9 @@ def single_iching(api_key: str):
         return
 
     st.session_state.se_count += 1
-    gua_name = random.choice(list(ICHING_HEXAGRAMS.keys()))
+    current_second = int(time.time())
+    gua_names = list(ICHING_HEXAGRAMS.keys())
+    gua_name = gua_names[current_second % len(gua_names)]
     gua_num = ICHING_HEXAGRAMS[gua_name]["num"]
     st.markdown(
         f"<div style='padding: 15px; border-radius: 8px; background-color: #F0F4F2; "
@@ -385,6 +571,7 @@ def single_iching(api_key: str):
 
     ok, full_text = run_reading(get_client(api_key), system_prompt, "☯️ 正在解卦...")
     if ok:
+        add_history_record("单人易经", "se_ta", gua_name, full_text)
         actions = extract_share_actions(
             full_text, "### 🗝️ 解忧锦囊", "1. 现实破局 2. 拒绝内耗 3. 理清思绪"
         )
@@ -418,7 +605,8 @@ def single_tarot(api_key: str):
         return
 
     st.session_state.sw_count += 1
-    card = random.choice(TAROT_CARDS)
+    current_second = int(time.time())
+    card = TAROT_CARDS[current_second % len(TAROT_CARDS)]
     st.markdown(
         f"<div style='padding: 15px; border-radius: 8px; background-color: #F3E5F5; "
         f"color: #4A148C; border-left: 5px solid #6A1B9A;'>抽取了塔罗牌：<b>{card}</b></div>",
@@ -452,6 +640,7 @@ def single_tarot(api_key: str):
 
     ok, full_text = run_reading(get_client(api_key), system_prompt, "🌌 感知能量...")
     if ok:
+        add_history_record("单人塔罗", "sw_ta", card, full_text)
         actions = extract_share_actions(
             full_text, "### 🗝️ 解忧锦囊", "1. 现实破局 2. 拒绝内耗 3. 理清思绪"
         )
@@ -472,10 +661,13 @@ def dual_iching(api_key: str):
     render_tag_buttons("de_ta", DUAL_TAGS, "tag_de")
     st.write("")
 
-    with st.container():
-        st.markdown('<div class="btn-east">', unsafe_allow_html=True)
-        draw = st.button("✨ 沉心合一卦", use_container_width=True, key="east_btn_d")
-        st.markdown("</div>", unsafe_allow_html=True)
+    both_ready = render_dual_ready_controls("de")
+    draw = False
+    if both_ready:
+        with st.container():
+            st.markdown('<div class="btn-east">', unsafe_allow_html=True)
+            draw = st.button("✨ 沉心合一卦", use_container_width=True, key="east_btn_d")
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if not draw:
         return
@@ -484,7 +676,9 @@ def dual_iching(api_key: str):
         return
 
     st.session_state.de_count += 1
-    gua_name = random.choice(list(ICHING_HEXAGRAMS.keys()))
+    current_second = int(time.time())
+    gua_names = list(ICHING_HEXAGRAMS.keys())
+    gua_name = gua_names[current_second % len(gua_names)]
     gua_num = ICHING_HEXAGRAMS[gua_name]["num"]
     st.markdown(
         f"<div style='padding: 15px; border-radius: 8px; background-color: #F0F4F2; "
@@ -524,6 +718,7 @@ def dual_iching(api_key: str):
 
     ok, full_text = run_reading(get_client(api_key), system_prompt, "☯️ 磁场对齐中...")
     if ok:
+        add_history_record("双人易经", "de_ta", gua_name, full_text)
         actions = extract_share_actions(
             full_text, "### 🗝️ 双人相处锦囊", "1. 双人破局 2. 拒绝内耗 3. 理清纠结"
         )
@@ -535,6 +730,7 @@ def dual_iching(api_key: str):
         render_share_block(
             share_text, f"de_s_{st.session_state.de_count}", "长按复制发给TA："
         )
+        reset_dual_ready()
 
 
 def dual_tarot(api_key: str):
@@ -547,10 +743,13 @@ def dual_tarot(api_key: str):
     render_tag_buttons("dw_ta", DUAL_TAGS, "tag_dw")
     st.write("")
 
-    with st.container():
-        st.markdown('<div class="btn-west">', unsafe_allow_html=True)
-        draw = st.button("🔮 凭直觉合一牌", use_container_width=True, key="west_btn_d")
-        st.markdown("</div>", unsafe_allow_html=True)
+    both_ready = render_dual_ready_controls("dw")
+    draw = False
+    if both_ready:
+        with st.container():
+            st.markdown('<div class="btn-west">', unsafe_allow_html=True)
+            draw = st.button("🔮 凭直觉合一牌", use_container_width=True, key="west_btn_d")
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if not draw:
         return
@@ -559,7 +758,8 @@ def dual_tarot(api_key: str):
         return
 
     st.session_state.dw_count += 1
-    card = random.choice(TAROT_CARDS)
+    current_second = int(time.time())
+    card = TAROT_CARDS[current_second % len(TAROT_CARDS)]
     st.markdown(
         f"<div style='padding: 15px; border-radius: 8px; background-color: #F3E5F5; "
         f"color: #4A148C; border-left: 5px solid #6A1B9A;'>抽取了塔罗牌：<b>{card}</b></div>",
@@ -597,6 +797,7 @@ def dual_tarot(api_key: str):
 
     ok, full_text = run_reading(get_client(api_key), system_prompt, "🌌 能量感应中...")
     if ok:
+        add_history_record("双人塔罗", "dw_ta", card, full_text)
         actions = extract_share_actions(
             full_text, "### 🗝️ 双人相处锦囊", "1. 双人破局 2. 拒绝内耗 3. 理清纠结"
         )
@@ -608,6 +809,7 @@ def dual_tarot(api_key: str):
         render_share_block(
             share_text, f"dw_s_{st.session_state.dw_count}", "长按复制发给TA："
         )
+        reset_dual_ready()
 
 
 with tab_single:
