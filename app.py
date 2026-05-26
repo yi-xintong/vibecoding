@@ -172,13 +172,9 @@ def set_ta_ready() -> None:
 
 
 def render_dual_ready_controls(key_prefix: str) -> bool:
-    st.info(
-        "💡 双人联动说明：本版本为单设备演示，双方点击准备后即可抽卦。"
-        "真正的跨设备互动需要后端支持，例如使用数据库同步状态。"
-    )
-
-    col_my, col_ta = st.columns(2)
+    col_my, col_ta = st.columns([1, 1])
     with col_my:
+        st.markdown('<div class="dual-ready-btn">', unsafe_allow_html=True)
         if st.session_state.my_ready:
             st.success("✅ 我准备好啦")
         else:
@@ -188,25 +184,39 @@ def render_dual_ready_controls(key_prefix: str) -> bool:
                 use_container_width=True,
                 on_click=set_my_ready,
             )
+        st.markdown("</div>", unsafe_allow_html=True)
     with col_ta:
+        st.markdown('<div class="dual-ready-btn">', unsafe_allow_html=True)
         if st.session_state.ta_ready:
             st.success("✅ TA 已准备好")
         else:
             st.button(
-                "👥 帮 TA 点一下（模拟 TA 已准备好）",
+                "👥 帮 TA 点一下",
                 key=f"{key_prefix}_ta_ready",
                 use_container_width=True,
                 on_click=set_ta_ready,
             )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.button("🔄 重置准备状态", key=f"{key_prefix}_reset", on_click=reset_dual_ready)
+    _, col_reset, _ = st.columns([1, 1, 1])
+    with col_reset:
+        st.markdown('<div class="dual-reset-wrap">', unsafe_allow_html=True)
+        st.button(
+            "🔄 重置准备状态",
+            key=f"{key_prefix}_reset",
+            on_click=reset_dual_ready,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<div class='dual-link-hint'>"
+        "💡 双人联动说明：本版本为单设备演示，双方点击准备后即可抽卦，跨设备互动将会在未来版本实现~"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.write("")
 
-    if st.session_state.my_ready and st.session_state.ta_ready:
-        return True
-
-    st.caption("等待双方都准备好...（自己点左按钮，帮朋友点右按钮）")
-    return False
+    return st.session_state.my_ready and st.session_state.ta_ready
 
 
 def render_history_sidebar() -> None:
@@ -312,28 +322,20 @@ st.markdown(
         display: none !important;
         background-color: transparent !important;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 40px;
-        margin-bottom: 20px;
-        border-bottom: 1px solid #EAEAEA !important;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 12px 24px;
-        font-size: 18px;
-        font-weight: 600;
-        color: #999;
-        border-bottom: none !important;
-    }
-    .stTabs [aria-selected="true"] { color: #111 !important; }
 
-    /* 快捷标签 10px、不换行、容器随文字收缩 */
+    /* 快捷标签：单行显示，宽度不足时可左右滑动 */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) {
-        gap: 8px !important;
+        overflow-x: auto;
+        flex-wrap: nowrap !important;
+        gap: 8px;
+        padding-bottom: 8px;
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
         align-items: flex-start !important;
     }
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) div[data-testid="column"] {
-        width: auto !important;
         flex: 0 0 auto !important;
+        width: auto !important;
     }
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) .stButton {
         width: fit-content !important;
@@ -342,12 +344,12 @@ st.markdown(
         background-color: #F0F2F5 !important;
         color: #666 !important;
         border: none !important;
-        padding: 2px 6px !important;
-        font-size: 10px !important;
-        font-weight: 400 !important;
-        border-radius: 12px !important;
         white-space: nowrap !important;
         word-break: keep-all !important;
+        font-size: 12px !important;
+        padding: 2px 8px !important;
+        font-weight: 400 !important;
+        border-radius: 12px !important;
         width: max-content !important;
         min-height: auto !important;
         height: 24px !important;
@@ -359,7 +361,7 @@ st.markdown(
     }
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) .stButton > button p,
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) .stButton > button div {
-        font-size: 10px !important;
+        font-size: 12px !important;
         white-space: nowrap !important;
     }
 
@@ -419,6 +421,11 @@ st.markdown(
         padding: 6px;
         border-radius: 40px;
         margin-bottom: 24px;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        border-bottom: none !important;
     }
     .stTabs [data-baseweb="tab"] {
         border-radius: 32px !important;
@@ -437,7 +444,62 @@ st.markdown(
         color: #111;
     }
 
+    /* 双人模式准备按钮 */
+    .dual-ready-btn .stButton > button {
+        background-color: #6c757d !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+    }
+    .dual-ready-btn .stButton > button:hover {
+        background-color: #5a6268 !important;
+        color: #ffffff !important;
+    }
+    .dual-reset-wrap {
+        display: flex;
+        justify-content: center;
+        margin-top: 4px;
+        margin-bottom: 4px;
+    }
+    .dual-reset-wrap .stButton {
+        width: auto !important;
+    }
+    .dual-reset-wrap .stButton > button {
+        background-color: #e9ecef !important;
+        color: #6c757d !important;
+        border: none !important;
+        border-radius: 20px !important;
+        padding: 4px 12px !important;
+        font-size: 12px !important;
+        opacity: 0.8;
+        box-shadow: none !important;
+        width: auto !important;
+        min-height: auto !important;
+    }
+    .dual-reset-wrap .stButton > button:hover {
+        background-color: #f0f0f0 !important;
+        color: #6c757d !important;
+        box-shadow: none !important;
+    }
+    .dual-link-hint {
+        background-color: #f5f5f5;
+        color: #888888;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 13px;
+        line-height: 1.6;
+        margin-top: 8px;
+    }
+
     @media (max-width: 600px) {
+        h1 {
+            font-size: calc(1.2rem + 3vw);
+            white-space: nowrap;
+            text-align: center;
+            padding: 0 10px;
+        }
         .stTabs [data-baseweb="tab"] {
             padding: 6px 12px !important;
             font-size: 13px !important;
@@ -448,11 +510,12 @@ st.markdown(
         }
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) {
             gap: 6px !important;
-            flex-wrap: wrap !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
         }
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:nth-child(4)) .stButton > button {
-            font-size: 9px !important;
-            padding: 2px 5px !important;
+            font-size: 11px !important;
+            padding: 2px 6px !important;
             height: 22px !important;
         }
         .stTextArea textarea {
