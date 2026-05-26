@@ -121,10 +121,6 @@ def add_history_record(mode: str, textarea_key: str, result_name: str, full_text
     st.session_state.history = [record] + st.session_state.history[:9]
 
 
-def clear_history() -> None:
-    st.session_state.history = []
-
-
 def show_history_detail(preview: str) -> None:
     st.toast(preview)
 
@@ -158,55 +154,30 @@ def render_share_block(share_text: str, share_key: str, label: str, height: int 
     st.text_area(label, value=share_text, height=height, key=share_key)
 
 
-def reset_dual_ready() -> None:
-    st.session_state.my_ready = False
-    st.session_state.ta_ready = False
+def reset_dual_ready(mode: str) -> None:
+    st.session_state[f"my_ready_{mode}"] = False
+    st.session_state[f"ta_ready_{mode}"] = False
 
 
-def set_my_ready() -> None:
-    st.session_state.my_ready = True
+def render_dual_ready_controls(mode: str) -> bool:
+    my_key = f"my_ready_{mode}"
+    ta_key = f"ta_ready_{mode}"
+    if my_key not in st.session_state:
+        st.session_state[my_key] = False
+    if ta_key not in st.session_state:
+        st.session_state[ta_key] = False
 
-
-def set_ta_ready() -> None:
-    st.session_state.ta_ready = True
-
-
-def render_dual_ready_controls(key_prefix: str) -> bool:
-    col_my, col_ta = st.columns([1, 1])
-    with col_my:
-        st.markdown('<div class="dual-ready-btn">', unsafe_allow_html=True)
-        if st.session_state.my_ready:
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.session_state[my_key]:
             st.success("✅ 我准备好啦")
-        else:
-            st.button(
-                "👤 我准备好啦",
-                key=f"{key_prefix}_my_ready",
-                use_container_width=True,
-                on_click=set_my_ready,
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-    with col_ta:
-        st.markdown('<div class="dual-ready-btn">', unsafe_allow_html=True)
-        if st.session_state.ta_ready:
+        elif st.button("👤 我准备好啦", key=f"btn_my_ready_{mode}", use_container_width=True):
+            st.session_state[my_key] = True
+    with col2:
+        if st.session_state[ta_key]:
             st.success("✅ TA 已准备好")
-        else:
-            st.button(
-                "👥 帮 TA 点一下",
-                key=f"{key_prefix}_ta_ready",
-                use_container_width=True,
-                on_click=set_ta_ready,
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    _, col_reset, _ = st.columns([1, 1, 1])
-    with col_reset:
-        st.markdown('<div class="dual-reset-wrap">', unsafe_allow_html=True)
-        st.button(
-            "🔄 重置准备状态",
-            key=f"{key_prefix}_reset",
-            on_click=reset_dual_ready,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+        elif st.button("👥 帮 TA 点一下", key=f"btn_ta_ready_{mode}", use_container_width=True):
+            st.session_state[ta_key] = True
 
     st.markdown(
         "<div class='dual-link-hint'>"
@@ -216,34 +187,47 @@ def render_dual_ready_controls(key_prefix: str) -> bool:
     )
     st.write("")
 
-    return st.session_state.my_ready and st.session_state.ta_ready
+    return st.session_state[my_key] and st.session_state[ta_key]
 
 
 def render_history_sidebar() -> None:
-    with st.expander("📜 历史记录 (最近10条)", expanded=False):
-        st.caption("刷新页面后记录将清空。")
-        if not st.session_state.history:
-            st.caption("暂无历史记录。")
-        else:
-            for idx, record in enumerate(st.session_state.history):
-                st.markdown(
-                    f"**{record['timestamp']}** · {record['mode']} · "
-                    f"**{record['result_name']}**"
-                )
-                st.caption(f"📝 {record['user_input']}")
-                preview_short = record["preview"][:60]
-                if len(record["preview"]) > 60:
-                    preview_short += "..."
-                st.caption(preview_short)
-                st.button(
-                    "查看详情",
-                    key=f"history_detail_{idx}",
-                    on_click=show_history_detail,
-                    args=(record["preview"],),
-                )
-                if idx < len(st.session_state.history) - 1:
-                    st.divider()
-        st.button("清空历史", key="clear_history", on_click=clear_history)
+    st.caption("刷新页面后记录将清空。")
+    if not st.session_state.history:
+        st.markdown(
+            "<p style='color:#999;font-size:13px;margin:8px 0 16px 0;'>"
+            "暂无占卜记录，试试抽一卦吧"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        for idx, record in enumerate(st.session_state.history):
+            st.markdown(
+                f"<div style='margin:10px 0 6px 0;line-height:1.5;'>"
+                f"<span style='font-size:12px;color:#888;'>{record['timestamp']}</span><br>"
+                f"<span style='font-size:14px;font-weight:600;color:#333;'>"
+                f"{record['mode']} · {record['result_name']}"
+                f"</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"📝 {record['user_input']}")
+            preview_short = record["preview"][:60]
+            if len(record["preview"]) > 60:
+                preview_short += "..."
+            st.markdown(
+                f"<p style='font-size:12px;color:#666;margin:0 0 8px 0;line-height:1.5;'>"
+                f"{preview_short}"
+                f"</p>",
+                unsafe_allow_html=True,
+            )
+            st.button(
+                "查看详情",
+                key=f"history_detail_{idx}",
+                on_click=show_history_detail,
+                args=(record["preview"],),
+            )
+            if idx < len(st.session_state.history) - 1:
+                st.divider()
 
 
 SINGLE_TAGS = ["offer等待焦虑", "人生方向抉择Yes or No", "好无聊我做点什么呢"]
@@ -300,8 +284,6 @@ for key, default in [
     ("sw_ta", ""),
     ("de_ta", ""),
     ("dw_ta", ""),
-    ("my_ready", False),
-    ("ta_ready", False),
     ("history", []),
 ]:
     if key not in st.session_state:
@@ -457,32 +439,6 @@ st.markdown(
         background-color: #5a6268 !important;
         color: #ffffff !important;
     }
-    .dual-reset-wrap {
-        display: flex;
-        justify-content: center;
-        margin-top: 4px;
-        margin-bottom: 4px;
-    }
-    .dual-reset-wrap .stButton {
-        width: auto !important;
-    }
-    .dual-reset-wrap .stButton > button {
-        background-color: #e9ecef !important;
-        color: #6c757d !important;
-        border: none !important;
-        border-radius: 20px !important;
-        padding: 4px 12px !important;
-        font-size: 12px !important;
-        opacity: 0.8;
-        box-shadow: none !important;
-        width: auto !important;
-        min-height: auto !important;
-    }
-    .dual-reset-wrap .stButton > button:hover {
-        background-color: #f0f0f0 !important;
-        color: #6c757d !important;
-        box-shadow: none !important;
-    }
     .dual-link-hint {
         background-color: #f5f5f5;
         color: #888888;
@@ -531,24 +487,7 @@ st.markdown(
 )
 
 with st.sidebar:
-    st.subheader("🔑 API 配置")
-    st.text_input(
-        "DeepSeek API Key",
-        type="password",
-        key="deepseek_api_key",
-        placeholder="sk-...（未填则使用环境变量）",
-        help="启动前也可执行：export DEEPSEEK_API_KEY='你的key'",
-    )
-    st.divider()
-    st.subheader("🔗 分享链接")
-    st.text_input(
-        "当前分享地址",
-        value=SHARE_LINK,
-        disabled=True,
-        help="全选复制后发给朋友，对方点开即可使用。",
-    )
-    st.caption("💡 分享给朋友时，请复制上方链接发送。")
-    st.divider()
+    st.subheader("📜 历史记录")
     render_history_sidebar()
 
 api_key = get_api_key()
@@ -564,7 +503,7 @@ st.markdown(
 
 if not api_key:
     st.warning(
-        "未检测到 API Key。请在左侧侧边栏填写，或在启动前执行："
+        "未检测到 API Key。请在启动前设置环境变量："
         "`export DEEPSEEK_API_KEY='你的key'`"
     )
 
@@ -592,7 +531,7 @@ def single_iching(api_key: str):
     if not draw:
         return
     if not api_key:
-        st.error("请先配置 DeepSeek API Key（侧边栏或环境变量）。")
+        st.error("请先配置 DeepSeek API Key（环境变量 DEEPSEEK_API_KEY）。")
         return
 
     st.session_state.se_count += 1
@@ -664,7 +603,7 @@ def single_tarot(api_key: str):
     if not draw:
         return
     if not api_key:
-        st.error("请先配置 DeepSeek API Key（侧边栏或环境变量）。")
+        st.error("请先配置 DeepSeek API Key（环境变量 DEEPSEEK_API_KEY）。")
         return
 
     st.session_state.sw_count += 1
@@ -735,7 +674,7 @@ def dual_iching(api_key: str):
     if not draw:
         return
     if not api_key:
-        st.error("请先配置 DeepSeek API Key（侧边栏或环境变量）。")
+        st.error("请先配置 DeepSeek API Key（环境变量 DEEPSEEK_API_KEY）。")
         return
 
     st.session_state.de_count += 1
@@ -793,7 +732,7 @@ def dual_iching(api_key: str):
         render_share_block(
             share_text, f"de_s_{st.session_state.de_count}", "长按复制发给TA："
         )
-        reset_dual_ready()
+        reset_dual_ready("de")
 
 
 def dual_tarot(api_key: str):
@@ -817,7 +756,7 @@ def dual_tarot(api_key: str):
     if not draw:
         return
     if not api_key:
-        st.error("请先配置 DeepSeek API Key（侧边栏或环境变量）。")
+        st.error("请先配置 DeepSeek API Key（环境变量 DEEPSEEK_API_KEY）。")
         return
 
     st.session_state.dw_count += 1
@@ -872,7 +811,7 @@ def dual_tarot(api_key: str):
         render_share_block(
             share_text, f"dw_s_{st.session_state.dw_count}", "长按复制发给TA："
         )
-        reset_dual_ready()
+        reset_dual_ready("dw")
 
 
 with tab_single:
