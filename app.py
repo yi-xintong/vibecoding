@@ -2779,15 +2779,64 @@ def _inject_tarot_pick_dilemma_script() -> None:
     return (areas[areas.length - 1].value || "").trim();
   }
   document.querySelectorAll("a.tarot-card-3d").forEach(function (a) {
-    a.addEventListener("click", function () {
+    a.addEventListener("click", function (e) {
+      if (window.__gpTarotFanTouch && window.__gpTarotFanTouch.moved) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       var text = readDilemma();
       if (!text) return;
       try {
         var u = new URL(a.getAttribute("href"), window.location.origin);
         u.searchParams.set("dilemma", text);
         a.setAttribute("href", u.pathname + u.search);
-      } catch (e) {}
+      } catch (err) {}
     }, true);
+  });
+})();
+</script>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def _inject_tarot_fan_touch_script() -> None:
+    """手机端横向滑动：区分滑动手势与点选，避免 <a> 抢触摸导致无法滚动。"""
+    st.markdown(
+        """
+<script>
+(function () {
+  var scrollEl = document.querySelector(".tarot-fan-wrap");
+  if (!scrollEl) return;
+  var state = window.__gpTarotFanTouch = { moved: false, startX: 0, startY: 0 };
+  var THRESH = 12;
+
+  scrollEl.addEventListener("touchstart", function (e) {
+    if (!e.touches.length) return;
+    state.moved = false;
+    state.startX = e.touches[0].clientX;
+    state.startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  scrollEl.addEventListener("touchmove", function (e) {
+    if (!e.touches.length) return;
+    var dx = Math.abs(e.touches[0].clientX - state.startX);
+    var dy = Math.abs(e.touches[0].clientY - state.startY);
+    if (dx > THRESH && dx > dy) state.moved = true;
+  }, { passive: true });
+
+  scrollEl.addEventListener("touchend", function () {
+    window.setTimeout(function () { state.moved = false; }, 80);
+  }, { passive: true });
+
+  scrollEl.querySelectorAll("a.tarot-card-3d").forEach(function (a) {
+    a.addEventListener("touchend", function (e) {
+      if (state.moved) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, { passive: false });
   });
 })();
 </script>
@@ -2802,7 +2851,7 @@ def _render_tarot_fan_stage(deck: list, mode_key: str, ritual: dict) -> None:
     _inject_tarot_image_preload(deck)
     selected = ritual.get("selected")
     if selected is None:
-        hint = "🌙 滑动浏览，点击一张与你能量共振的牌"
+        hint = "🌙 左右滑动浏览，轻点一张与你能量共振的牌"
     else:
         hint = "✨ 已为你锁定此牌，解读在下方生成"
     st.markdown(
@@ -2925,29 +2974,34 @@ def _build_tarot_fan_markup(
     cards_html = "".join(cards)
     return f"""
 <style>
+div[data-testid="stMarkdownContainer"]:has(.tarot-fan-wrap),
+div[data-testid="stElementContainer"]:has(.tarot-fan-wrap) {{
+  overflow: visible !important;
+  max-width: 100% !important;
+}}
 .tarot-fan-wrap {{
   width: 100%;
+  max-width: 100%;
   max-height: 200px;
-  padding: 8px 4px 12px;
-  overflow: hidden;
-}}
-.tarot-fan-scroll {{
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  min-width: min-content;
-  padding: 0 24px 6px;
+  padding: 8px 0 12px;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+  -ms-overflow-style: none;
 }}
-.tarot-fan-scroll::-webkit-scrollbar {{ display: none; }}
+.tarot-fan-wrap::-webkit-scrollbar {{ display: none; }}
 .tarot-fan {{
-  display: flex;
+  display: inline-flex;
   align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 4px;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: max-content;
+  padding: 0 20px 4px;
+  box-sizing: border-box;
 }}
 .tarot-fan--deal-in .tarot-card-3d {{
   animation: tarotDealIn 0.55s ease-out backwards;
@@ -2963,6 +3017,10 @@ a.tarot-card-3d {{
   color: inherit;
   display: block;
   flex: 0 0 auto;
+  touch-action: pan-x;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }}
 .tarot-card-3d {{
   flex: 0 0 auto;
@@ -2972,6 +3030,7 @@ a.tarot-card-3d {{
   cursor: pointer;
   transform: rotate(var(--rot));
   transition: transform 0.35s ease, opacity 0.35s ease, margin 0.35s ease;
+  touch-action: pan-x;
 }}
 .tarot-card-3d.dimmed {{ opacity: 0.3; pointer-events: none; }}
 .tarot-card-3d.selected {{
@@ -3043,14 +3102,17 @@ a.tarot-card-3d {{
   line-height: 1.3;
 }}
 @media (max-width: 640px) {{
+  .tarot-fan-wrap {{
+    max-height: 180px;
+    padding-bottom: 16px;
+  }}
+  .tarot-fan {{ padding: 0 12px 4px; }}
   .tarot-card-3d {{ width: 60px; height: 90px; }}
   .back-symbol {{ font-size: 22px; }}
 }}
 </style>
-<div class="tarot-fan-wrap">
-  <div class="tarot-fan-scroll">
-    <div class="tarot-fan{deal_cls}">{cards_html}</div>
-  </div>
+<div class="tarot-fan-wrap" role="region" aria-label="塔罗牌扇形浏览，可左右滑动">
+  <div class="tarot-fan{deal_cls}">{cards_html}</div>
 </div>
 """
 
@@ -3065,6 +3127,8 @@ def render_tarot_fan(deck: list, mode_key: str, ritual: dict) -> None:
         ritual.get("show_deal", False),
     )
     st.markdown(markup, unsafe_allow_html=True)
+    if ritual.get("selected") is None:
+        _inject_tarot_fan_touch_script()
 
 
 def render_tarot_ritual(
